@@ -4,6 +4,7 @@ import subprocess
 import sys
 
 import cv2
+import imageio_ffmpeg
 import numpy as np
 from PIL import Image
 from rembg import new_session, remove
@@ -32,8 +33,6 @@ def main():
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
     print(f'input: {width}x{height}, {fps:.3f} fps, {frame_count} frames')
 
-    # General-purpose foreground segmentation. This is deliberately generated
-    # offline so the phone only has to sample two synchronized video textures.
     session = new_session('isnet-general-use')
 
     i = 0
@@ -49,8 +48,6 @@ def main():
         if mask.ndim == 3:
             mask = mask[..., 0].copy()
 
-        # Kill weak background haze, close tiny holes, then soften the contour
-        # enough to prevent a harsh cardboard cut-out edge in AR.
         mask[mask < 22] = 0
         kernel = np.ones((3, 3), np.uint8)
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=1)
@@ -65,8 +62,9 @@ def main():
     if i == 0:
         raise RuntimeError('No frames decoded')
 
+    ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
     cmd = [
-        'ffmpeg', '-y',
+        ffmpeg, '-y',
         '-framerate', f'{fps:.8f}',
         '-i', str(frames_dir / '%05d.png'),
         '-an',
