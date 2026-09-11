@@ -37,7 +37,7 @@ jobs:
       - name: Install alpha-mask dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install "rembg[cpu]" opencv-python-headless pillow
+          pip install "rembg[cpu]" opencv-python-headless pillow imageio-ffmpeg
 
       - name: Prepare theropod RGB video
         run: |
