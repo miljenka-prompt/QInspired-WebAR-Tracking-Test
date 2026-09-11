@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import {initScenePipelineModule, toggleEvidenceMode} from './scene.js'
+import {initScenePipelineModule, toggleTheropodVideo} from './scene.js'
 
 window.THREE = THREE
 
@@ -22,19 +22,17 @@ const start = () => {
   recenter?.addEventListener('click', () => {
     XR8.XrController.recenter()
     const status = document.getElementById('status')
-    if (status) status.textContent = 'Koordinatni sustav ponovno centriran.'
+    if (status) status.textContent = 'Theropod je ponovno usidren prema trenutačnoj poziciji kamere.'
   })
 
-  const evidence = document.getElementById('evidence')
-  evidence?.addEventListener('click', () => {
-    const active = toggleEvidenceMode()
-    evidence.classList.toggle('active', active)
-    evidence.textContent = active ? 'Immersive mode' : 'Evidence mode'
-    const status = document.getElementById('status')
-    if (status) {
-      status.textContent = active
-        ? 'Evidence mode: potvrđeno ostaje čvrsto, vjerojatno i spekulativno postaju prozirni.'
-        : 'Immersive mode: svi elementi prikazani su potpuno.'
+  const videoButton = document.getElementById('video-toggle')
+  videoButton?.addEventListener('click', async () => {
+    try {
+      const playing = await toggleTheropodVideo()
+      videoButton.textContent = playing ? 'Pauziraj video' : 'Pokreni video'
+    } catch (error) {
+      const status = document.getElementById('status')
+      if (status) status.textContent = 'Browser je blokirao autoplay. Dodirni ponovno za pokretanje videa.'
     }
   })
 }
