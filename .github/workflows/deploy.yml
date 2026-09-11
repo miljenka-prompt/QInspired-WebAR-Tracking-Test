@@ -39,15 +39,21 @@ jobs:
           python -m pip install --upgrade pip
           pip install "rembg[cpu]" opencv-python-headless pillow imageio-ffmpeg
 
-      - name: Prepare theropod RGB video
+      - name: Prepare spatial RGB videos
         run: |
           mkdir -p public
           curl -L --fail --retry 3 \
             https://raw.githubusercontent.com/miljenka-prompt/AR-kredna-obala-Istarskog-arhipelaga/main/Cretaceous_teropod.mp4 \
             -o public/theropod.mp4
+          curl -L --fail --retry 3 \
+            https://raw.githubusercontent.com/miljenka-prompt/AR-Krapinski-neandertalac/main/assets/krapina-neandertalac-15s.mp4 \
+            -o public/neanderthal.mp4
 
       - name: Generate theropod alpha mask
         run: python scripts/generate_alpha_mask.py public/theropod.mp4 public/theropod-mask.mp4
+
+      - name: Generate Neanderthal alpha mask
+        run: python scripts/generate_alpha_mask.py public/neanderthal.mp4 public/neanderthal-mask.mp4
 
       - name: Build
         run: npm run build
