@@ -1,15 +1,29 @@
 import * as THREE from 'three'
 
 let theropodVideo = null
+let theropodMaskVideo = null
 let theropodPlane = null
 let theropodShadow = null
 let xrCamera = null
 
-const VIDEO_URL = 'https://miljenka-prompt.github.io/AR-kredna-obala-Istarskog-arhipelaga/Cretaceous_teropod.mp4'
+const VIDEO_URL = './theropod.mp4'
+const MASK_URL = './theropod-mask.mp4'
 
 const setStatus = (text) => {
   const status = document.getElementById('status')
   if (status) status.textContent = text
+}
+
+const makeVideoElement = (src) => {
+  const video = document.createElement('video')
+  video.src = src
+  video.loop = true
+  video.muted = true
+  video.playsInline = true
+  video.setAttribute('playsinline', '')
+  video.setAttribute('webkit-playsinline', '')
+  video.preload = 'auto'
+  return video
 }
 
 const makeSoftShadowTexture = () => {
@@ -18,18 +32,20 @@ const makeSoftShadowTexture = () => {
   canvas.height = 128
   const ctx = canvas.getContext('2d')
   const gradient = ctx.createRadialGradient(128, 64, 8, 128, 64, 120)
-  gradient.addColorStop(0, 'rgba(0,0,0,0.42)')
-  gradient.addColorStop(0.45, 'rgba(0,0,0,0.20)')
+  gradient.addColorStop(0, 'rgba(0,0,0,0.36)')
+  gradient.addColorStop(0.45, 'rgba(0,0,0,0.16)')
   gradient.addColorStop(1, 'rgba(0,0,0,0)')
   ctx.fillStyle = gradient
   ctx.fillRect(0, 0, canvas.width, canvas.height)
   return new THREE.CanvasTexture(canvas)
 }
 
-const makeSpatialVideoMaterial = (texture) => new THREE.ShaderMaterial({
+const makeAlphaMaskedMaterial = (rgbTexture, maskTexture) => new THREE.ShaderMaterial({
   uniforms: {
-    map: {value: texture},
-    feather: {value: 0.055},
+    rgbMap: {value: rgbTexture},
+    maskMap: {value: maskTexture},
+    alphaGain: {value: 1.15},
+    alphaFloor: {value: 0.08},
   },
   vertexShader: `
     varying vec2 vUv;
@@ -39,16 +55,18 @@ const makeSpatialVideoMaterial = (texture) => new THREE.ShaderMaterial({
     }
   `,
   fragmentShader: `
-    uniform sampler2D map;
-    uniform float feather;
+    uniform sampler2D rgbMap;
+    uniform sampler2D maskMap;
+    uniform float alphaGain;
+    uniform float alphaFloor;
     varying vec2 vUv;
 
     void main() {
-      vec4 c = texture2D(map, vUv);
-      float edgeX = smoothstep(0.0, feather, vUv.x) * smoothstep(0.0, feather, 1.0 - vUv.x);
-      float edgeY = smoothstep(0.0, feather, vUv.y) * smoothstep(0.0, feather, 1.0 - vUv.y);
-      float alpha = edgeX * edgeY;
-      gl_FragColor = vec4(c.rgb, c.a * alpha);
+      vec4 rgb = texture2D(rgbMap, vUv);
+      float m = texture2D(maskMap, vUv).r;
+      float a = smoothstep(alphaFloor, 1.0, m * alphaGain);
+      if (a < 0.015) discard;
+      gl_FragColor = vec4(rgb.rgb, a);
     }
   `,
   transparent: true,
@@ -57,29 +75,46 @@ const makeSpatialVideoMaterial = (texture) => new THREE.ShaderMaterial({
   toneMapped: false,
 })
 
-const buildTheropodVideoPlane = (scene) => {
-  theropodVideo = document.createElement('video')
-  theropodVideo.src = VIDEO_URL
-  theropodVideo.crossOrigin = 'anonymous'
-  theropodVideo.loop = true
-  theropodVideo.muted = true
-  theropodVideo.playsInline = true
-  theropodVideo.setAttribute('playsinline', '')
-  theropodVideo.setAttribute('webkit-playsinline', '')
-  theropodVideo.preload = 'auto'
+const syncVideos = () => {
+  if (!theropodVideo || !theropodMaskVideo) return
+  const drift = Math.abs(theropodVideo.currentTime - theropodMaskVideo.currentTime)
+  if (drift > 0.08) theropodMaskVideo.currentTime = theropodVideo.currentTime
+}
 
-  const texture = new THREE.VideoTexture(theropodVideo)
-  texture.colorSpace = THREE.SRGBColorSpace
-  texture.minFilter = THREE.LinearFilter
-  texture.magFilter = THREE.LinearFilter
-  texture.generateMipmaps = false
+const playBoth = async () => {
+  if (!theropodVideo || !theropodMaskVideo) return false
+  theropodMaskVideo.currentTime = theropodVideo.currentTime
+  await Promise.all([theropodVideo.play(), theropodMaskVideo.play()])
+  return true
+}
+
+const pauseBoth = () => {
+  theropodVideo?.pause()
+  theropodMaskVideo?.pause()
+}
+
+const buildTheropodVideoPlane = (scene) => {
+  theropodVideo = makeVideoElement(VIDEO_URL)
+  theropodMaskVideo = makeVideoElement(MASK_URL)
+
+  const rgbTexture = new THREE.VideoTexture(theropodVideo)
+  rgbTexture.colorSpace = THREE.SRGBColorSpace
+  rgbTexture.minFilter = THREE.LinearFilter
+  rgbTexture.magFilter = THREE.LinearFilter
+  rgbTexture.generateMipmaps = false
+
+  const maskTexture = new THREE.VideoTexture(theropodMaskVideo)
+  maskTexture.colorSpace = THREE.NoColorSpace
+  maskTexture.minFilter = THREE.LinearFilter
+  maskTexture.magFilter = THREE.LinearFilter
+  maskTexture.generateMipmaps = false
 
   const targetHeight = 1.8
   theropodPlane = new THREE.Mesh(
     new THREE.PlaneGeometry(3.2, targetHeight),
-    makeSpatialVideoMaterial(texture)
+    makeAlphaMaskedMaterial(rgbTexture, maskTexture)
   )
-  theropodPlane.name = 'world-locked-cretaceous-theropod-video'
+  theropodPlane.name = 'world-locked-alpha-masked-theropod'
   theropodPlane.position.set(0, targetHeight / 2, -1.5)
   theropodPlane.renderOrder = 2
   scene.add(theropodPlane)
@@ -90,50 +125,62 @@ const buildTheropodVideoPlane = (scene) => {
     depthWrite: false,
     toneMapped: false,
   })
-  theropodShadow = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 1.0), shadowMaterial)
+  theropodShadow = new THREE.Mesh(new THREE.PlaneGeometry(2.5, 0.9), shadowMaterial)
   theropodShadow.rotation.x = -Math.PI / 2
-  theropodShadow.position.set(0, 0.015, -1.5)
-  theropodShadow.renderOrder = 1
+  theropodShadow.position.set(0, 0.012, -1.5)
   scene.add(theropodShadow)
 
-  theropodVideo.addEventListener('loadedmetadata', () => {
-    if (!theropodPlane || !theropodVideo.videoWidth || !theropodVideo.videoHeight) return
+  let rgbReady = false
+  let maskReady = false
+
+  const maybeReady = () => {
+    if (!rgbReady || !maskReady) return
+
     const aspect = theropodVideo.videoWidth / theropodVideo.videoHeight
     const width = targetHeight * aspect
     theropodPlane.geometry.dispose()
     theropodPlane.geometry = new THREE.PlaneGeometry(width, targetHeight)
 
-    if (theropodShadow) {
-      theropodShadow.geometry.dispose()
-      theropodShadow.geometry = new THREE.PlaneGeometry(Math.max(2.2, width * 0.75), 1.0)
-    }
+    theropodShadow.geometry.dispose()
+    theropodShadow.geometry = new THREE.PlaneGeometry(Math.max(2.0, width * 0.72), 0.9)
 
-    setStatus('Theropod je usidren. Rubovi su omekšani, a prikaz se okreće prema tebi samo po Y osi.')
+    setStatus('Alpha mask učitana. U prostoru bi trebao ostati samo theropod, bez video-ekrana.')
+    playBoth().catch(() => {
+      setStatus('Alpha mask spremna. Dodirni “Pokreni video”.')
+    })
+  }
+
+  theropodVideo.addEventListener('loadedmetadata', () => {
+    rgbReady = true
+    maybeReady()
   })
 
-  theropodVideo.addEventListener('error', () => {
-    setStatus('Video se nije učitao. Tracking je aktivan; pokušaj osvježiti stranicu.')
+  theropodMaskVideo.addEventListener('loadedmetadata', () => {
+    maskReady = true
+    maybeReady()
   })
 
-  theropodVideo.play().catch(() => {
-    setStatus('Tracking je aktivan. Dodirni “Pokreni video” za theropoda.')
-  })
+  const handleError = () => {
+    setStatus('RGB ili alpha-mask video se nije učitao. Osvježi stranicu nakon deploya.')
+  }
+  theropodVideo.addEventListener('error', handleError)
+  theropodMaskVideo.addEventListener('error', handleError)
 }
 
 export const toggleTheropodVideo = async () => {
-  if (!theropodVideo) return false
+  if (!theropodVideo || !theropodMaskVideo) return false
 
   if (theropodVideo.paused) {
-    await theropodVideo.play()
+    await playBoth()
     return true
   }
 
-  theropodVideo.pause()
+  pauseBoth()
   return false
 }
 
 export const initScenePipelineModule = () => ({
-  name: 'qinspired-theropod-video-scene',
+  name: 'qinspired-alpha-theropod-scene',
 
   onStart: ({canvas}) => {
     const {scene, camera} = XR8.Threejs.xrScene()
@@ -150,11 +197,13 @@ export const initScenePipelineModule = () => ({
 
     canvas.addEventListener('touchmove', (event) => event.preventDefault(), {passive: false})
 
-    setStatus('Tracking aktivan. Theropod video se učitava…')
+    setStatus('Tracking aktivan. Učitavam RGB video i alpha masku…')
   },
 
   onUpdate: () => {
     if (!theropodPlane || !xrCamera) return
+
+    syncVideos()
 
     const dx = xrCamera.position.x - theropodPlane.position.x
     const dz = xrCamera.position.z - theropodPlane.position.z
