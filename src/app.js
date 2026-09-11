@@ -1,9 +1,15 @@
 import * as THREE from 'three'
-import {initScenePipelineModule, toggleTheropodVideo} from './scene.js'
+import {getSpatialSubject, initScenePipelineModule, toggleSpatialVideo} from './scene.js'
 
 window.THREE = THREE
 
+const subject = getSpatialSubject()
+
 const start = () => {
+  const pill = document.querySelector('.pill')
+  if (pill) pill.textContent = `QInspired Heritage AR · ${subject.title} · spatial alpha test`
+  document.title = `QInspired Heritage AR — ${subject.title}`
+
   XR8.addCameraPipelineModules([
     XR8.GlTextureRenderer.pipelineModule(),
     XR8.Threejs.pipelineModule(),
@@ -22,13 +28,13 @@ const start = () => {
   recenter?.addEventListener('click', () => {
     XR8.XrController.recenter()
     const status = document.getElementById('status')
-    if (status) status.textContent = 'Theropod je ponovno usidren prema trenutačnoj poziciji kamere.'
+    if (status) status.textContent = `${subject.label[0].toUpperCase()}${subject.label.slice(1)} je ponovno usidren prema trenutačnoj poziciji kamere.`
   })
 
   const videoButton = document.getElementById('video-toggle')
   videoButton?.addEventListener('click', async () => {
     try {
-      const playing = await toggleTheropodVideo()
+      const playing = await toggleSpatialVideo()
       videoButton.textContent = playing ? 'Pauziraj video' : 'Pokreni video'
     } catch (error) {
       const status = document.getElementById('status')
