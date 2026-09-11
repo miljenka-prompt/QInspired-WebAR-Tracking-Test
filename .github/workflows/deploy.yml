@@ -26,8 +26,28 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Install dependencies
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install JS dependencies
         run: npm install
+
+      - name: Install alpha-mask dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install "rembg[cpu]" opencv-python-headless pillow
+
+      - name: Prepare theropod RGB video
+        run: |
+          mkdir -p public
+          curl -L --fail --retry 3 \
+            https://raw.githubusercontent.com/miljenka-prompt/AR-kredna-obala-Istarskog-arhipelaga/main/Cretaceous_teropod.mp4 \
+            -o public/theropod.mp4
+
+      - name: Generate theropod alpha mask
+        run: python scripts/generate_alpha_mask.py public/theropod.mp4 public/theropod-mask.mp4
 
       - name: Build
         run: npm run build
