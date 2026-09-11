@@ -1,93 +1,83 @@
 import * as THREE from 'three'
 
-let evidenceMode = false
-let heritageObject = null
+let theropodVideo = null
+let theropodPlane = null
 
-const buildHeritageObject = () => {
-  const group = new THREE.Group()
-  group.name = 'heritage-test-object'
+const VIDEO_URL = 'https://miljenka-prompt.github.io/AR-kredna-obala-Istarskog-arhipelaga/Cretaceous_teropod.mp4'
 
-  const confirmed = new THREE.Mesh(
-    new THREE.BoxGeometry(0.9, 0.35, 0.55),
-    new THREE.MeshStandardMaterial({color: 0xb78a5b, roughness: 0.75, transparent: true, opacity: 1})
-  )
-  confirmed.position.y = 0.175
-  confirmed.userData.evidenceOpacity = 1.0
-  confirmed.userData.evidenceTag = 'confirmed'
-  confirmed.castShadow = true
-  group.add(confirmed)
-
-  const probable = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.08, 0.08, 0.9, 24),
-    new THREE.MeshStandardMaterial({color: 0x7d5b3d, roughness: 0.8, transparent: true, opacity: 1})
-  )
-  probable.position.set(-0.3, 0.8, 0)
-  probable.userData.evidenceOpacity = 0.65
-  probable.userData.evidenceTag = 'probable'
-  probable.castShadow = true
-  group.add(probable)
-
-  const speculative = new THREE.Mesh(
-    new THREE.SphereGeometry(0.2, 32, 24),
-    new THREE.MeshStandardMaterial({color: 0xd8b36a, roughness: 0.6, transparent: true, opacity: 1})
-  )
-  speculative.position.set(0.25, 0.62, 0)
-  speculative.userData.evidenceOpacity = 0.3
-  speculative.userData.evidenceTag = 'speculative'
-  speculative.castShadow = true
-  group.add(speculative)
-
-  return group
+const setStatus = (text) => {
+  const status = document.getElementById('status')
+  if (status) status.textContent = text
 }
 
-const setOpacity = (mesh, opacity) => {
-  if (!mesh.material) return
-  mesh.material.transparent = true
-  mesh.material.opacity = opacity
-  mesh.material.needsUpdate = true
-}
+const buildTheropodVideoPlane = (scene) => {
+  theropodVideo = document.createElement('video')
+  theropodVideo.src = VIDEO_URL
+  theropodVideo.crossOrigin = 'anonymous'
+  theropodVideo.loop = true
+  theropodVideo.muted = true
+  theropodVideo.playsInline = true
+  theropodVideo.setAttribute('playsinline', '')
+  theropodVideo.setAttribute('webkit-playsinline', '')
+  theropodVideo.preload = 'auto'
 
-const applyEvidenceMode = () => {
-  if (!heritageObject) return
-  heritageObject.traverse((child) => {
-    if (!child.isMesh) return
-    setOpacity(child, evidenceMode ? (child.userData.evidenceOpacity ?? 1) : 1)
+  const texture = new THREE.VideoTexture(theropodVideo)
+  texture.colorSpace = THREE.SRGBColorSpace
+  texture.minFilter = THREE.LinearFilter
+  texture.magFilter = THREE.LinearFilter
+  texture.generateMipmaps = false
+
+  const material = new THREE.MeshBasicMaterial({
+    map: texture,
+    side: THREE.DoubleSide,
+    toneMapped: false,
+  })
+
+  // Start at a 16:9-like size; correct to the video's real aspect ratio once metadata arrives.
+  const targetHeight = 1.8
+  const geometry = new THREE.PlaneGeometry(3.2, targetHeight)
+  theropodPlane = new THREE.Mesh(geometry, material)
+  theropodPlane.name = 'world-locked-cretaceous-theropod-video'
+  theropodPlane.position.set(0, targetHeight / 2, -1.5)
+  scene.add(theropodPlane)
+
+  theropodVideo.addEventListener('loadedmetadata', () => {
+    if (!theropodPlane || !theropodVideo.videoWidth || !theropodVideo.videoHeight) return
+    const aspect = theropodVideo.videoWidth / theropodVideo.videoHeight
+    const width = targetHeight * aspect
+    theropodPlane.geometry.dispose()
+    theropodPlane.geometry = new THREE.PlaneGeometry(width, targetHeight)
+    setStatus('Theropod je usidren u prostoru. Kreći se lijevo/desno i provjeri ostaje li na mjestu.')
+  })
+
+  theropodVideo.addEventListener('error', () => {
+    setStatus('Video se nije učitao. Tracking je aktivan; pokušaj osvježiti stranicu.')
+  })
+
+  theropodVideo.play().catch(() => {
+    setStatus('Tracking je aktivan. Dodirni “Pokreni video” za theropoda.')
   })
 }
 
-export const toggleEvidenceMode = () => {
-  evidenceMode = !evidenceMode
-  applyEvidenceMode()
-  return evidenceMode
+export const toggleTheropodVideo = async () => {
+  if (!theropodVideo) return false
+
+  if (theropodVideo.paused) {
+    await theropodVideo.play()
+    return true
+  }
+
+  theropodVideo.pause()
+  return false
 }
 
 export const initScenePipelineModule = () => ({
-  name: 'qinspired-modern-scene',
+  name: 'qinspired-theropod-video-scene',
 
   onStart: ({canvas}) => {
-    const {scene, camera, renderer} = XR8.Threejs.xrScene()
+    const {scene, camera} = XR8.Threejs.xrScene()
 
-    renderer.shadowMap.enabled = true
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap
-
-    scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1.25))
-
-    const sun = new THREE.DirectionalLight(0xffffff, 1.6)
-    sun.position.set(2, 5, 3)
-    sun.castShadow = true
-    scene.add(sun)
-
-    const shadowPlane = new THREE.Mesh(
-      new THREE.PlaneGeometry(30, 30),
-      new THREE.ShadowMaterial({opacity: 0.28})
-    )
-    shadowPlane.rotation.x = -Math.PI / 2
-    shadowPlane.receiveShadow = true
-    scene.add(shadowPlane)
-
-    heritageObject = buildHeritageObject()
-    heritageObject.position.set(0, 0, -1.5)
-    scene.add(heritageObject)
+    buildTheropodVideoPlane(scene)
 
     camera.position.set(0, 1.6, 2.5)
 
@@ -98,7 +88,6 @@ export const initScenePipelineModule = () => ({
 
     canvas.addEventListener('touchmove', (event) => event.preventDefault(), {passive: false})
 
-    const status = document.getElementById('status')
-    if (status) status.textContent = 'Tracking aktivan. Objekt bi trebao ostati usidren dok se krećeš.'
+    setStatus('Tracking aktivan. Theropod video se učitava…')
   },
 })
