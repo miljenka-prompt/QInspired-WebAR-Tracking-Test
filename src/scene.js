@@ -1,13 +1,36 @@
 import * as THREE from 'three'
 
-let theropodVideo = null
-let theropodMaskVideo = null
-let theropodPlane = null
-let theropodShadow = null
+let spatialVideo = null
+let spatialMaskVideo = null
+let spatialPlane = null
+let spatialShadow = null
 let xrCamera = null
 
-const VIDEO_URL = './theropod.mp4'
-const MASK_URL = './theropod-mask.mp4'
+const SUBJECTS = {
+  theropod: {
+    label: 'theropod',
+    title: 'kredni theropod',
+    videoUrl: './theropod.mp4',
+    maskUrl: './theropod-mask.mp4',
+    targetHeight: 1.8,
+    shadowScale: 0.72,
+  },
+  neanderthal: {
+    label: 'neandertalac',
+    title: 'krapinski neandertalac',
+    videoUrl: './neanderthal.mp4',
+    maskUrl: './neanderthal-mask.mp4',
+    targetHeight: 1.75,
+    shadowScale: 0.55,
+  },
+}
+
+const params = new URLSearchParams(window.location.search)
+const requestedSubject = params.get('subject')
+const subjectKey = requestedSubject === 'neanderthal' ? 'neanderthal' : 'theropod'
+const subject = SUBJECTS[subjectKey]
+
+export const getSpatialSubject = () => ({key: subjectKey, ...subject})
 
 const setStatus = (text) => {
   const status = document.getElementById('status')
@@ -32,8 +55,8 @@ const makeSoftShadowTexture = () => {
   canvas.height = 128
   const ctx = canvas.getContext('2d')
   const gradient = ctx.createRadialGradient(128, 64, 8, 128, 64, 120)
-  gradient.addColorStop(0, 'rgba(0,0,0,0.36)')
-  gradient.addColorStop(0.45, 'rgba(0,0,0,0.16)')
+  gradient.addColorStop(0, 'rgba(0,0,0,0.34)')
+  gradient.addColorStop(0.45, 'rgba(0,0,0,0.14)')
   gradient.addColorStop(1, 'rgba(0,0,0,0)')
   ctx.fillStyle = gradient
   ctx.fillRect(0, 0, canvas.width, canvas.height)
@@ -76,48 +99,47 @@ const makeAlphaMaskedMaterial = (rgbTexture, maskTexture) => new THREE.ShaderMat
 })
 
 const syncVideos = () => {
-  if (!theropodVideo || !theropodMaskVideo) return
-  const drift = Math.abs(theropodVideo.currentTime - theropodMaskVideo.currentTime)
-  if (drift > 0.08) theropodMaskVideo.currentTime = theropodVideo.currentTime
+  if (!spatialVideo || !spatialMaskVideo) return
+  const drift = Math.abs(spatialVideo.currentTime - spatialMaskVideo.currentTime)
+  if (drift > 0.08) spatialMaskVideo.currentTime = spatialVideo.currentTime
 }
 
 const playBoth = async () => {
-  if (!theropodVideo || !theropodMaskVideo) return false
-  theropodMaskVideo.currentTime = theropodVideo.currentTime
-  await Promise.all([theropodVideo.play(), theropodMaskVideo.play()])
+  if (!spatialVideo || !spatialMaskVideo) return false
+  spatialMaskVideo.currentTime = spatialVideo.currentTime
+  await Promise.all([spatialVideo.play(), spatialMaskVideo.play()])
   return true
 }
 
 const pauseBoth = () => {
-  theropodVideo?.pause()
-  theropodMaskVideo?.pause()
+  spatialVideo?.pause()
+  spatialMaskVideo?.pause()
 }
 
-const buildTheropodVideoPlane = (scene) => {
-  theropodVideo = makeVideoElement(VIDEO_URL)
-  theropodMaskVideo = makeVideoElement(MASK_URL)
+const buildSpatialVideoPlane = (scene) => {
+  spatialVideo = makeVideoElement(subject.videoUrl)
+  spatialMaskVideo = makeVideoElement(subject.maskUrl)
 
-  const rgbTexture = new THREE.VideoTexture(theropodVideo)
+  const rgbTexture = new THREE.VideoTexture(spatialVideo)
   rgbTexture.colorSpace = THREE.SRGBColorSpace
   rgbTexture.minFilter = THREE.LinearFilter
   rgbTexture.magFilter = THREE.LinearFilter
   rgbTexture.generateMipmaps = false
 
-  const maskTexture = new THREE.VideoTexture(theropodMaskVideo)
+  const maskTexture = new THREE.VideoTexture(spatialMaskVideo)
   maskTexture.colorSpace = THREE.NoColorSpace
   maskTexture.minFilter = THREE.LinearFilter
   maskTexture.magFilter = THREE.LinearFilter
   maskTexture.generateMipmaps = false
 
-  const targetHeight = 1.8
-  theropodPlane = new THREE.Mesh(
-    new THREE.PlaneGeometry(3.2, targetHeight),
+  spatialPlane = new THREE.Mesh(
+    new THREE.PlaneGeometry(3.2, subject.targetHeight),
     makeAlphaMaskedMaterial(rgbTexture, maskTexture)
   )
-  theropodPlane.name = 'world-locked-alpha-masked-theropod'
-  theropodPlane.position.set(0, targetHeight / 2, -1.5)
-  theropodPlane.renderOrder = 2
-  scene.add(theropodPlane)
+  spatialPlane.name = `world-locked-alpha-masked-${subjectKey}`
+  spatialPlane.position.set(0, subject.targetHeight / 2, -1.5)
+  spatialPlane.renderOrder = 2
+  scene.add(spatialPlane)
 
   const shadowMaterial = new THREE.MeshBasicMaterial({
     map: makeSoftShadowTexture(),
@@ -125,10 +147,10 @@ const buildTheropodVideoPlane = (scene) => {
     depthWrite: false,
     toneMapped: false,
   })
-  theropodShadow = new THREE.Mesh(new THREE.PlaneGeometry(2.5, 0.9), shadowMaterial)
-  theropodShadow.rotation.x = -Math.PI / 2
-  theropodShadow.position.set(0, 0.012, -1.5)
-  scene.add(theropodShadow)
+  spatialShadow = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 0.85), shadowMaterial)
+  spatialShadow.rotation.x = -Math.PI / 2
+  spatialShadow.position.set(0, 0.012, -1.5)
+  scene.add(spatialShadow)
 
   let rgbReady = false
   let maskReady = false
@@ -136,26 +158,26 @@ const buildTheropodVideoPlane = (scene) => {
   const maybeReady = () => {
     if (!rgbReady || !maskReady) return
 
-    const aspect = theropodVideo.videoWidth / theropodVideo.videoHeight
-    const width = targetHeight * aspect
-    theropodPlane.geometry.dispose()
-    theropodPlane.geometry = new THREE.PlaneGeometry(width, targetHeight)
+    const aspect = spatialVideo.videoWidth / spatialVideo.videoHeight
+    const width = subject.targetHeight * aspect
+    spatialPlane.geometry.dispose()
+    spatialPlane.geometry = new THREE.PlaneGeometry(width, subject.targetHeight)
 
-    theropodShadow.geometry.dispose()
-    theropodShadow.geometry = new THREE.PlaneGeometry(Math.max(2.0, width * 0.72), 0.9)
+    spatialShadow.geometry.dispose()
+    spatialShadow.geometry = new THREE.PlaneGeometry(Math.max(1.4, width * subject.shadowScale), 0.85)
 
-    setStatus('Alpha mask učitana. U prostoru bi trebao ostati samo theropod, bez video-ekrana.')
+    setStatus(`Alpha mask učitana. U prostoru bi trebao ostati samo ${subject.label}, bez video-ekrana.`)
     playBoth().catch(() => {
-      setStatus('Alpha mask spremna. Dodirni “Pokreni video”.')
+      setStatus(`Alpha mask spremna. Dodirni “Pokreni video” za ${subject.label}.`)
     })
   }
 
-  theropodVideo.addEventListener('loadedmetadata', () => {
+  spatialVideo.addEventListener('loadedmetadata', () => {
     rgbReady = true
     maybeReady()
   })
 
-  theropodMaskVideo.addEventListener('loadedmetadata', () => {
+  spatialMaskVideo.addEventListener('loadedmetadata', () => {
     maskReady = true
     maybeReady()
   })
@@ -163,14 +185,14 @@ const buildTheropodVideoPlane = (scene) => {
   const handleError = () => {
     setStatus('RGB ili alpha-mask video se nije učitao. Osvježi stranicu nakon deploya.')
   }
-  theropodVideo.addEventListener('error', handleError)
-  theropodMaskVideo.addEventListener('error', handleError)
+  spatialVideo.addEventListener('error', handleError)
+  spatialMaskVideo.addEventListener('error', handleError)
 }
 
-export const toggleTheropodVideo = async () => {
-  if (!theropodVideo || !theropodMaskVideo) return false
+export const toggleSpatialVideo = async () => {
+  if (!spatialVideo || !spatialMaskVideo) return false
 
-  if (theropodVideo.paused) {
+  if (spatialVideo.paused) {
     await playBoth()
     return true
   }
@@ -180,13 +202,13 @@ export const toggleTheropodVideo = async () => {
 }
 
 export const initScenePipelineModule = () => ({
-  name: 'qinspired-alpha-theropod-scene',
+  name: `qinspired-alpha-${subjectKey}-scene`,
 
   onStart: ({canvas}) => {
     const {scene, camera} = XR8.Threejs.xrScene()
     xrCamera = camera
 
-    buildTheropodVideoPlane(scene)
+    buildSpatialVideoPlane(scene)
 
     camera.position.set(0, 1.6, 2.5)
 
@@ -197,16 +219,16 @@ export const initScenePipelineModule = () => ({
 
     canvas.addEventListener('touchmove', (event) => event.preventDefault(), {passive: false})
 
-    setStatus('Tracking aktivan. Učitavam RGB video i alpha masku…')
+    setStatus(`Tracking aktivan. Učitavam ${subject.title} i alpha masku…`)
   },
 
   onUpdate: () => {
-    if (!theropodPlane || !xrCamera) return
+    if (!spatialPlane || !xrCamera) return
 
     syncVideos()
 
-    const dx = xrCamera.position.x - theropodPlane.position.x
-    const dz = xrCamera.position.z - theropodPlane.position.z
-    theropodPlane.rotation.y = Math.atan2(dx, dz)
+    const dx = xrCamera.position.x - spatialPlane.position.x
+    const dz = xrCamera.position.z - spatialPlane.position.z
+    spatialPlane.rotation.y = Math.atan2(dx, dz)
   },
 })
