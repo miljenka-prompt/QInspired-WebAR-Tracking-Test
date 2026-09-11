@@ -44,10 +44,10 @@ def main():
 
         frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
         mask_pil = remove(Image.fromarray(frame_rgb), session=session, only_mask=True)
-        mask = np.asarray(mask_pil, dtype=np.uint8)
+        mask = np.array(mask_pil, dtype=np.uint8, copy=True)
 
         if mask.ndim == 3:
-            mask = mask[..., 0]
+            mask = mask[..., 0].copy()
 
         # Kill weak background haze, close tiny holes, then soften the contour
         # enough to prevent a harsh cardboard cut-out edge in AR.
