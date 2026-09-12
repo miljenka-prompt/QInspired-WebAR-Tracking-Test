@@ -34,8 +34,9 @@ def main():
     print(f'input: {width}x{height}, {fps:.3f} fps, {frame_count} frames')
 
     session = new_session('isnet-general-use')
-    raw_masks = []
+    close_kernel = np.ones((3, 3), np.uint8)
 
+    i = 0
     while True:
         ok, frame_bgr = cap.read()
         if not ok:
@@ -44,41 +45,26 @@ def main():
         frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
         mask_pil = remove(Image.fromarray(frame_rgb), session=session, only_mask=True)
         mask = np.array(mask_pil, dtype=np.uint8, copy=True)
+
         if mask.ndim == 3:
             mask = mask[..., 0].copy()
-        raw_masks.append(mask)
 
-        if len(raw_masks) % 10 == 0:
-            print(f'extracted {len(raw_masks)}/{frame_count or "?"}')
-
-    cap.release()
-    if not raw_masks:
-        raise RuntimeError('No frames decoded')
-
-    # Stabilise the independently segmented video frames. A one-frame temporal
-    # maximum protects moving heads/hands/feet from brief segmentation dropouts.
-    # A very small dilation then preserves dark extremities without creating a
-    # visibly inflated silhouette.
-    close_kernel = np.ones((3, 3), np.uint8)
-    dilate_kernel = np.ones((3, 3), np.uint8)
-
-    for i, current in enumerate(raw_masks):
-        neighbours = [current]
-        if i > 0:
-            neighbours.append(raw_masks[i - 1])
-        if i + 1 < len(raw_masks):
-            neighbours.append(raw_masks[i + 1])
-        mask = np.maximum.reduce(neighbours)
-
-        # Keep faint edge evidence instead of deleting it before morphology.
-        mask[mask < 10] = 0
-        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, close_kernel, iterations=2)
-        mask = cv2.dilate(mask, dilate_kernel, iterations=1)
-        mask = cv2.GaussianBlur(mask, (0, 0), 1.0)
+        # Process only the matching RGB frame. Do not merge neighbouring
+        # masks: temporal unions leave visible ghosts when the subject moves.
+        # Preserve faint hair/foot edges, close only tiny holes, and soften
+        # the boundary without expanding the silhouette into the background.
+        mask[mask < 12] = 0
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, close_kernel, iterations=1)
+        mask = cv2.GaussianBlur(mask, (0, 0), 0.75)
 
         cv2.imwrite(str(frames_dir / f'{i:05d}.png'), mask)
-        if (i + 1) % 10 == 0:
-            print(f'processed {i + 1}/{len(raw_masks)}')
+        i += 1
+        if i % 10 == 0:
+            print(f'processed {i}/{frame_count or "?"}')
+
+    cap.release()
+    if i == 0:
+        raise RuntimeError('No frames decoded')
 
     ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
     cmd = [
@@ -94,7 +80,7 @@ def main():
         str(dst),
     ]
     subprocess.run(cmd, check=True)
-    print(f'wrote {dst} from {len(raw_masks)} mask frames')
+    print(f'wrote {dst} from {i} mask frames')
 
 
 if __name__ == '__main__':
