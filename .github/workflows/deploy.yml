@@ -46,7 +46,7 @@ jobs:
             https://raw.githubusercontent.com/miljenka-prompt/AR-kredna-obala-Istarskog-arhipelaga/main/Cretaceous_teropod.mp4 \
             -o public/theropod.mp4
           curl -L --fail --retry 3 \
-            https://raw.githubusercontent.com/miljenka-prompt/AR-Krapinski-neandertalac/main/assets/krapina-neandertalac-15s.mp4 \
+            https://raw.githubusercontent.com/miljenka-prompt/AR-Krapinski-neandertalac/main/Krapinski_neandertalac.mp4 \
             -o public/neanderthal.mp4
 
       - name: Generate theropod alpha mask
