@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -20,6 +20,27 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Restore known-good Neanderthal mask once
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ ! -f frozen/neanderthal-mask.mp4 ]; then
+            mkdir -p frozen /tmp/run17 /tmp/run17site
+            curl -L --fail --retry 3 \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              https://api.github.com/repos/miljenka-prompt/QInspired-WebAR-Tracking-Test/actions/artifacts/10298583554/zip \
+              -o /tmp/run17.zip
+            unzip -q /tmp/run17.zip -d /tmp/run17
+            tar -xf /tmp/run17/artifact.tar -C /tmp/run17site
+            cp /tmp/run17site/neanderthal-mask.mp4 frozen/neanderthal-mask.mp4
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add frozen/neanderthal-mask.mp4
+            git commit -m "Freeze known-good Neanderthal mask [skip ci]"
+            git push
+          fi
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -48,12 +69,10 @@ jobs:
           curl -L --fail --retry 3 \
             https://raw.githubusercontent.com/miljenka-prompt/AR-Krapinski-neandertalac/main/Krapinski_neandertalac.mp4 \
             -o public/neanderthal.mp4
+          cp frozen/neanderthal-mask.mp4 public/neanderthal-mask.mp4
 
       - name: Generate theropod alpha mask
         run: python scripts/generate_alpha_mask.py public/theropod.mp4 public/theropod-mask.mp4
-
-      - name: Generate Neanderthal alpha mask
-        run: python scripts/generate_alpha_mask.py public/neanderthal.mp4 public/neanderthal-mask.mp4
 
       - name: Build
         run: npm run build
