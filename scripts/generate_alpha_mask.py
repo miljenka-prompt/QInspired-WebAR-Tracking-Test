@@ -33,8 +33,17 @@ def main():
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
     print(f'input: {width}x{height}, {fps:.3f} fps, {frame_count} frames')
 
-    session = new_session('isnet-general-use')
+    # The Neanderthal is a human-shaped subject. The generic ISNet model
+    # intermittently classifies moving forest/background near the head as
+    # foreground. Use a person-specific model for this clip; keep the generic
+    # model for the theropod and other non-human subjects.
+    is_neanderthal = 'neanderthal' in src.name.lower() or 'neanderthal' in dst.name.lower()
+    model_name = 'u2net_human_seg' if is_neanderthal else 'isnet-general-use'
+    print(f'foreground model: {model_name}')
+    session = new_session(model_name)
+
     close_kernel = np.ones((3, 3), np.uint8)
+    erode_kernel = np.ones((3, 3), np.uint8)
 
     i = 0
     while True:
@@ -49,13 +58,16 @@ def main():
         if mask.ndim == 3:
             mask = mask[..., 0].copy()
 
-        # Process only the matching RGB frame. Do not merge neighbouring
-        # masks: temporal unions leave visible ghosts when the subject moves.
-        # Preserve faint hair/foot edges, close only tiny holes, and soften
-        # the boundary without expanding the silhouette into the background.
-        mask[mask < 12] = 0
+        # Process only the matching RGB frame. Never union neighbouring masks:
+        # temporal unions create visible ghosts when the subject moves.
+        # Close tiny interior holes, then contract the human silhouette very
+        # slightly so background foliage is less likely to survive at hair/head
+        # boundaries. Soft blur restores a natural edge after contraction.
+        mask[mask < 18] = 0
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, close_kernel, iterations=1)
-        mask = cv2.GaussianBlur(mask, (0, 0), 0.75)
+        if is_neanderthal:
+            mask = cv2.erode(mask, erode_kernel, iterations=1)
+        mask = cv2.GaussianBlur(mask, (0, 0), 0.65 if is_neanderthal else 0.75)
 
         cv2.imwrite(str(frames_dir / f'{i:05d}.png'), mask)
         i += 1
