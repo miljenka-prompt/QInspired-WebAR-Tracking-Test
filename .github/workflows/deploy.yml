@@ -72,6 +72,22 @@ jobs:
             -o public/neanderthal.mp4
           cp frozen/neanderthal-mask.mp4 public/neanderthal-mask.mp4
 
+      - name: Generate packed Neanderthal RGB-mask video
+        run: |
+          FFMPEG=$(python - <<'PY'
+          import imageio_ffmpeg
+          print(imageio_ffmpeg.get_ffmpeg_exe())
+          PY
+          )
+          "$FFMPEG" -y \
+            -i public/neanderthal.mp4 \
+            -i public/neanderthal-mask.mp4 \
+            -filter_complex "[0:v][1:v]hstack=inputs=2[v]" \
+            -map "[v]" -map 0:a? \
+            -c:v libx264 -preset medium -crf 18 -pix_fmt yuv420p -r 24 \
+            -c:a aac -b:a 128k -movflags +faststart \
+            -shortest public/neanderthal-packed.mp4
+
       - name: Generate theropod alpha mask
         run: python scripts/generate_alpha_mask.py public/theropod.mp4 public/theropod-mask.mp4
 
